@@ -4,3 +4,5 @@ gender_project_output/
 __pycache__/
 .DS_Store
 data/
+gender_project_code/unused/
+gender_project_code/used/
