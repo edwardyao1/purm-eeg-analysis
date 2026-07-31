@@ -15,9 +15,9 @@ Create an output directory and a data directory in the paths noted in the script
 
 To run the analysis, navigate to the directory containing these scripts and run them individually. These functions will reproduce all figures, tables, and results text and save them in the output directory:
 
-* **`multivariable_logistic_regression`**: Runs the main figures and analyses evaluating sex, epilepsy type, and age.
-* **`mann_whitney_tests`**: Runs the Mann-Whitney U tests and generates the associated figures.
-* **`flowchart`**: Generates the supplemental figure of the patient cohort attrition and selection.
-* **`likelihood_ratio_testing`**: Runs the testing between the interaction terms of the main regression model.
-* **`multivariable_logistic_regression_menopause`**: Runs the main analyses with the age split defined at 51 years old.
-* **`multivariable_logistic_regression_menopause_interaction`**: Runs the analyses with interaction terms utilizing the age split of 51 years old.
+* **`mann_whitney_tests`**: Runs the Mann-Whitney U tests and generates the associated figures. Contains Figure 1A and Figure S2.
+* **`multivariable_logistic_regression`**: Runs the main figures and analyses evaluating sex, epilepsy type, and age. Contains Table 1, Figure 1B, Table S2, Table S4, and Figure S2.
+* **`multivariable_logistic_regression_menopause`**: Runs the supplemental analyses with the age split defined at 51 years old. Contains Figure S3.
+* **`multivariable_logistic_regression_menopause_interaction`**: Runs the supplemental analyses with interaction terms utilizing the age split of 51 years old. Contains Table S3.
+* * **`likelihood_ratio_testing`**: Runs the testing between the interaction terms of the main regression model. Contains Table S1.
+* **`flowchart`**: Generates the supplemental figure of the patient cohort attrition and selection. Contains Figure S1.
