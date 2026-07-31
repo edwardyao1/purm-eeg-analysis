@@ -1,5 +1,5 @@
 # Bootstrapped binary forest plot of Logit models for spike rate and seizure frequency 
-# Modeled by sex, epilepsy type, age (<51 vs >=51), and Sex x Age interaction
+# Modeled by sex, epilepsy type, and age groups (18-39, 40-64, 65+) 
 # with median split for binary spike rate and seizure frequency outcomes
 
 import pandas as pd
@@ -9,7 +9,6 @@ import ast
 import warnings
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
-from scipy.stats import chi2
 
 warnings.filterwarnings("ignore")
 np.random.seed(42)
@@ -99,8 +98,9 @@ def print_and_save_requested_stats(patient_df, valid_sessions, vuniq, save_dir, 
     n_focal = len(patient_df[patient_df['canonical_subtype'] == 'Focal'])
     n_generalized = len(patient_df[patient_df['canonical_subtype'] == 'Generalized'])
     
-    n_lt_51 = len(patient_df[patient_df['age_ge_51'] == 0])
-    n_ge_51 = len(patient_df[patient_df['age_ge_51'] == 1])
+    n_18_39 = len(patient_df[patient_df['age_group'] == '18-39'])
+    n_40_64 = len(patient_df[patient_df['age_group'] == '40-64'])
+    n_65_plus = len(patient_df[patient_df['age_group'] == '65+'])
 
     visits_per_pat = cohort_visits.groupby('Patient').size()
     
@@ -125,8 +125,9 @@ def print_and_save_requested_stats(patient_df, valid_sessions, vuniq, save_dir, 
         {"Category": "Epilepsy Subtype", "Metric": "Focal Lobe N (%)", "Value": f"{n_focal:,} ({(n_focal/n_patients)*100:.1f}%)", "Bootstrapped 95% CI": ""},
         {"Category": "Epilepsy Subtype", "Metric": "Generalized N (%)", "Value": f"{n_generalized:,} ({(n_generalized/n_patients)*100:.1f}%)", "Bootstrapped 95% CI": ""},
         {"Category": "Age", "Metric": "Age at first clinic visit Median (IQR)", "Value": median_iqr(patient_df['age_at_first_visit'], 1), "Bootstrapped 95% CI": ""},
-        {"Category": "Age Group", "Metric": "< 51 years N (%)", "Value": f"{n_lt_51:,} ({(n_lt_51/n_patients)*100:.1f}%)", "Bootstrapped 95% CI": ""},
-        {"Category": "Age Group", "Metric": ">= 51 years N (%)", "Value": f"{n_ge_51:,} ({(n_ge_51/n_patients)*100:.1f}%)", "Bootstrapped 95% CI": ""},
+        {"Category": "Age Group", "Metric": "18-39 years N (%)", "Value": f"{n_18_39:,} ({(n_18_39/n_patients)*100:.1f}%)", "Bootstrapped 95% CI": ""},
+        {"Category": "Age Group", "Metric": "40-64 years N (%)", "Value": f"{n_40_64:,} ({(n_40_64/n_patients)*100:.1f}%)", "Bootstrapped 95% CI": ""},
+        {"Category": "Age Group", "Metric": "65+ years N (%)", "Value": f"{n_65_plus:,} ({(n_65_plus/n_patients)*100:.1f}%)", "Bootstrapped 95% CI": ""},
         {"Category": "Clinical Follow-up", "Metric": "Number of clinic visits Median (IQR)", "Value": median_iqr(visits_per_pat, 1), "Bootstrapped 95% CI": ""},
         {"Category": "Clinical Follow-up", "Metric": "Years of follow-up Median (IQR)", "Value": median_iqr(fup, 1), "Bootstrapped 95% CI": ""},
         {"Category": "Clinical Follow-up", "Metric": "% Visits with documented sz freq Median (IQR)", "Value": f"{median_iqr(doc_pct, 1)}%", "Bootstrapped 95% CI": ""},
@@ -244,24 +245,31 @@ def bootstrap_regression_coeffs(df, outcome_col, formula_vars, n_boot=5000):
     df = df.copy()
 
     # CRITICAL FIX: Lock the seed explicitly right before sampling. 
+    # This guarantees identical p-values and CIs regardless of what ran earlier in the script!
     np.random.seed(42)
+
+    print(f"\nChecking {outcome_col}")
+    print(df[outcome_col].value_counts())
 
     df = df[np.isfinite(df[outcome_col])]
 
-    # No need to get_dummies for these as they are already 0/1 in the updated workflow
-    # We will use the exact columns provided in formula_vars
-    
+    cols_to_dummy = [outcome_col, "nlp_gender", "canonical_subtype", "age_group"]
+    reg_df = pd.get_dummies(
+        df[cols_to_dummy],
+        drop_first=True
+    ).astype(float)
+
     results = {}
 
     for var in formula_vars:
-        if var not in df.columns:
-            print(f"{var} missing from columns")
+        if var not in reg_df.columns:
+            print(f"{var} missing")
             results[var] = (0, 0, 0, 1)
             continue
 
         coeffs = []
         for _ in range(n_boot):
-            sample = df.sample(len(df), replace=True)
+            sample = reg_df.sample(len(reg_df), replace=True)
             X = sample[formula_vars]
             X = sm.add_constant(X)
             y = sample[outcome_col]
@@ -276,6 +284,7 @@ def bootstrap_regression_coeffs(df, outcome_col, formula_vars, n_boot=5000):
                 pass
 
         coeffs = np.asarray(coeffs)
+        print(f"{outcome_col} | {var} | valid coeffs = {len(coeffs)}")
 
         if len(coeffs) == 0:
             results[var] = (0, 0, 0, 1)
@@ -296,11 +305,12 @@ def run_analysis(patient_df, outcome_col, outcome_label):
     print(f"BOOTSTRAP LOGIT REGRESSION (ODDS RATIOS) — {outcome_label}")
     print(f"===========================================================================")
     
-    formula_vars = ['nlp_gender_M', 'canonical_subtype_Generalized', 'age_ge_51', 'gender_M_x_age_ge_51']
+    formula_vars = ['nlp_gender_M', 'canonical_subtype_Generalized', 'age_group_40-64', 'age_group_65+']
     coeffs = bootstrap_regression_coeffs(patient_df, outcome_col, formula_vars)
     
     rows = []
     
+    # Exponentiate log-odds to get Odds Ratios (OR = e^beta) while keeping p-value exact
     def to_or(res):
         return (np.exp(res[0]), np.exp(res[1]), np.exp(res[2]), res[3])
 
@@ -317,16 +327,14 @@ def run_analysis(patient_df, outcome_col, outcome_label):
     rows.append(dict(section="Epilepsy Type", label="Generalized", n=len(patient_df[patient_df['canonical_subtype']=='Generalized']), is_reference=False, diff=g_res[0], lo=g_res[1], hi=g_res[2], p=g_res[3]))
 
     # Section 3: Age Group
-    age_lt51_n = len(patient_df[patient_df['age_ge_51']==0])
-    rows.append(dict(section="Age Group", label="< 51 years", n=age_lt51_n, is_reference=True, diff=1.0, lo=1.0, hi=1.0, p=None))
+    age1_n = len(patient_df[patient_df['age_group']=='18-39'])
+    rows.append(dict(section="Age Group", label="18-39 years", n=age1_n, is_reference=True, diff=1.0, lo=1.0, hi=1.0, p=None))
     
-    a_res = to_or(coeffs['age_ge_51'])
-    rows.append(dict(section="Age Group", label=">= 51 years", n=len(patient_df[patient_df['age_ge_51']==1]), is_reference=False, diff=a_res[0], lo=a_res[1], hi=a_res[2], p=a_res[3]))
-
-    # Section 4: Interaction Term
-    i_res = to_or(coeffs['gender_M_x_age_ge_51'])
-    rows.append(dict(section="Interaction", label="No Interaction", n=len(patient_df), is_reference=True, diff=1.0, lo=1.0, hi=1.0, p=None))
-    rows.append(dict(section="Interaction", label="Male x Age >= 51", n=len(patient_df[(patient_df['nlp_gender_M']==1) & (patient_df['age_ge_51']==1)]), is_reference=False, diff=i_res[0], lo=i_res[1], hi=i_res[2], p=i_res[3]))
+    a2_res = to_or(coeffs['age_group_40-64'])
+    rows.append(dict(section="Age Group", label="40-64 years", n=len(patient_df[patient_df['age_group']=='40-64']), is_reference=False, diff=a2_res[0], lo=a2_res[1], hi=a2_res[2], p=a2_res[3]))
+    
+    a3_res = to_or(coeffs['age_group_65+'])
+    rows.append(dict(section="Age Group", label="65+ years", n=len(patient_df[patient_df['age_group']=='65+']), is_reference=False, diff=a3_res[0], lo=a3_res[1], hi=a3_res[2], p=a3_res[3]))
 
     return rows
 
@@ -334,7 +342,7 @@ def run_analysis(patient_df, outcome_col, outcome_label):
 # PLOTTING HELPERS (CUSTOM FOREST PLOT WITH LARGE FONTS)
 # ==========================================================
 def forest_plot(rows, title, x_lim, x_ticks, x_label, left_dir_label, right_dir_label, out_path):
-    fig, ax = plt.subplots(figsize=(16, 10))
+    fig, ax = plt.subplots(figsize=(16, 9))
     ax.axis("off")
 
     sections = []
@@ -342,17 +350,19 @@ def forest_plot(rows, title, x_lim, x_ticks, x_label, left_dir_label, right_dir_
         if r["section"] not in sections:
             sections.append(r["section"])
 
+    # Shifted bounds so the plot isn't squashed and P-Value stays far from the right edge
     COL_SUB = 0.02
     COL_N = 0.25   
     COL_EST = 0.41 
     PLOT_L = 0.59  
-    PLOT_R = 0.86  
-    COL_P = 0.91   
+    PLOT_R = 0.86  # Pulled the right edge of the plot in closer
+    COL_P = 0.91   # Shifted the P-Value column securely inside the plot boundary
 
     def map_x(v):
         frac = (v - x_lim[0]) / (x_lim[1] - x_lim[0])
         return PLOT_L + frac * (PLOT_R - PLOT_L)
 
+    # --- MATH FOR PERFECT UNIFORM SPACING ---
     top = 10.0
     section_gap = 0.95  
     line_gap = 0.75     
@@ -369,25 +379,32 @@ def forest_plot(rows, title, x_lim, x_ticks, x_label, left_dir_label, right_dir_
                 y -= line_gap
         y -= (section_gap - line_gap) 
 
+    # Top row headers
     ax.text(COL_SUB, top, "Subgroup / Variable", fontweight="bold", va="center", fontsize=14)
     ax.text(COL_N, top, "Patients (N)", fontweight="bold", va="center", fontsize=14)
     ax.text(COL_EST, top, "Odds Ratio (95% CI)", fontweight="bold", va="center", fontsize=14) 
     ax.text(COL_P, top, "P-Value", fontweight="bold", va="center", fontsize=14)
     ax.text(map_x(1.0), top, "Odds Ratio (95% CI)", fontweight="bold", ha="center", va="center", fontsize=14)
 
+    # Top black dividing line
     ax.plot([0, 1], [top - 0.3, top - 0.3], color="black")
 
     for sec in sections:
+        # Category headers 
         ax.text(COL_SUB, ypos[(sec, "__header__")], sec, fontsize=15, fontweight="bold", va="center")
 
     for row in rows:
         y_loc = ypos[(row["section"], row["label"])]
+        
+        # Dynamically append (Ref.) to reference categories
         label_text = f'{row["label"]} (Ref.)' if row["is_reference"] else row["label"]
         
+        # Row Labels and N Counts 
         ax.text(COL_SUB + 0.04, y_loc, label_text, va="center", fontsize=14)
         ax.text(COL_N, y_loc, str(row["n"]), va="center", fontsize=14)
 
         if row["is_reference"]:
+            # Reference Text 
             ax.text(COL_EST, y_loc, "Ref.", va="center", fontsize=14)
             ax.scatter(map_x(1.0), y_loc, s=50, marker="s", color="black")
             ax.text(COL_P, y_loc, "Ref.", va="center", fontsize=14)
@@ -396,6 +413,7 @@ def forest_plot(rows, title, x_lim, x_ticks, x_label, left_dir_label, right_dir_
             lo = row["lo"]
             hi = row["hi"]
 
+            # Output Values 
             ax.text(COL_EST, y_loc, f"{d:.2f} ({lo:.2f}-{hi:.2f})", va="center", fontsize=14)
             ax.plot([map_x(lo), map_x(hi)], [y_loc, y_loc], lw=2, color="black")
             ax.scatter(map_x(d), y_loc, s=50, marker="s", color="black")
@@ -403,17 +421,24 @@ def forest_plot(rows, title, x_lim, x_ticks, x_label, left_dir_label, right_dir_
             ptxt = "<0.001" if row["p"] < 0.001 else f"{row['p']:.3f}"
             ax.text(COL_P, y_loc, ptxt, va="center", fontsize=14)
 
+    # Find the lowest row dynamically and snap the axis right below it
     bottom_y = min(ypos.values())
     axis_y = bottom_y - 0.8  
     
+    # Reference dashed line locked to Odds Ratio = 1.0
     ax.plot([map_x(1.0), map_x(1.0)], [axis_y, top - 0.3], ls="--", color="gray")
+    
+    # Bottom black line
     ax.plot([map_x(x_lim[0]), map_x(x_lim[1])], [axis_y, axis_y], color="black")
 
     for tick in x_ticks:
         x_loc = map_x(tick)
-        ax.plot([x_loc, x_loc], [axis_y, axis_y - 0.15], color="black") 
-        ax.text(x_loc, axis_y - 0.30, str(tick), ha="center", va="top", fontsize=12)
+        ax.plot([x_loc, x_loc], [axis_y, axis_y - 0.15], color="black") # Tick marks
+        ax.text(x_loc, axis_y - 0.30, str(tick), ha="center", va="top", fontsize=12) # Tick numbers increased
 
+    # =========================================================================
+    # DOUBLE-SIDED DIRECTIONAL ARROW (<--->)
+    # =========================================================================
     arrow_y = axis_y - 1.0
     axis_range = x_lim[1] - x_lim[0]
     
@@ -431,56 +456,74 @@ def forest_plot(rows, title, x_lim, x_ticks, x_label, left_dir_label, right_dir_
     ax.text(text_right_x, arrow_y + 0.15, right_dir_label, 
             ha="center", va="bottom", fontsize=12, fontweight="bold", color="black")
 
+    # Overall plot Title 
     plt.title(title, fontweight="bold", fontsize=17, pad=25)
+    
     plt.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close()
 
 # ==========================================================
-# LIKELIHOOD RATIO TEST & REGRESSION
+# STANDARD LOGISTIC REGRESSION RESULTS
 # ==========================================================
-def test_interaction_lrt(df, outcome_col, title):
+# ==========================================================
+# STANDARD LOGISTIC REGRESSION RESULTS
+# ==========================================================
+def print_logit_results(df, outcome_col, title):
     print("\n" + "=" * 80)
-    print(f"LIKELIHOOD RATIO TEST: {title}")
+    print(title)
     print("=" * 80)
 
-    reg_df = df.copy().dropna(subset=[outcome_col, "age_ge_51"])
+    reg_df = df.copy()
+    reg_df = reg_df[["nlp_gender", "canonical_subtype", outcome_col, "age_group"]].copy()
+
     reg_df[outcome_col] = pd.to_numeric(reg_df[outcome_col], errors="coerce")
+    reg_df = reg_df.dropna(subset=[outcome_col, "age_group"])
     reg_df = reg_df[np.isfinite(reg_df[outcome_col])].copy()
+
+    print(f"\nBinary Outcome Summary ({outcome_col}):")
+    print(reg_df[outcome_col].value_counts())
+
+    reg_df["nlp_gender_M"] = (reg_df["nlp_gender"] == "M").astype(float)
+    reg_df["canonical_subtype_Generalized"] = (reg_df["canonical_subtype"] == "Generalized").astype(float)
+    reg_df["age_group_40-64"] = (reg_df["age_group"] == "40-64").astype(float)
+    reg_df["age_group_65+"] = (reg_df["age_group"] == "65+").astype(float)
+
+    X = reg_df[["nlp_gender_M", "canonical_subtype_Generalized", "age_group_40-64", "age_group_65+"]].astype(float)
+    X = sm.add_constant(X)
     
     y = reg_df[outcome_col].astype(float)
-    
-    # Model 1: BASE (No Interaction)
-    X_base = reg_df[["nlp_gender_M", "canonical_subtype_Generalized", "age_ge_51"]].astype(float)
-    X_base = sm.add_constant(X_base)
-    
-    # Model 2: INTERACTIVE (With Sex x Age Interaction)
-    X_inter = reg_df[["nlp_gender_M", "canonical_subtype_Generalized", "age_ge_51", "gender_M_x_age_ge_51"]].astype(float)
-    X_inter = sm.add_constant(X_inter)
 
-    try:
-        model_base = sm.Logit(y, X_base).fit(disp=0)
-        model_inter = sm.Logit(y, X_inter).fit(disp=0)
-        
-        # Calculate Likelihood Ratio Test Statistic
-        lr_stat = -2 * (model_base.llf - model_inter.llf)
-        df_diff = model_inter.df_model - model_base.df_model
-        p_val = chi2.sf(lr_stat, df_diff)
-        
-        print(f"Base Model Log-Likelihood:        {model_base.llf:.3f}")
-        print(f"Interactive Model Log-Likelihood: {model_inter.llf:.3f}")
-        print(f"Likelihood Ratio Statistic:       {lr_stat:.3f}")
-        print(f"Degrees of Freedom Diff:          {df_diff}")
-        print(f"LRT P-value:                      {p_val:.5f}\n")
-        
-        if p_val < 0.05:
-            print("CONCLUSION: YES. The interaction term significantly improves the model fit.")
-            print(f"The relationship between sex and {outcome_col} differs depending on whether the patient is >= 51 years old.")
-        else:
-            print("CONCLUSION: NO. The interaction term DOES NOT significantly improve the model fit.")
-            print(f"Adding the Sex x Age interaction does not provide a statistically better explanation for {outcome_col}.")
-            
-    except Exception as e:
-        print(f"Error fitting models for LRT: {e}")
+    # Fit the model
+    model = sm.Logit(y, X).fit(disp=0) # disp=0 hides the iterative optimization text
+
+    # Extract Log-Odds and exponentiate to get Odds Ratios
+    params = model.params
+    conf = model.conf_int()
+    pvals = model.pvalues
+
+    or_df = pd.DataFrame({
+        'Odds Ratio': np.exp(params),
+        'CI 2.5%': np.exp(conf[0]),
+        'CI 97.5%': np.exp(conf[1]),
+        'P-Value': pvals
+    })
+
+    # Format the numbers for a clean printout
+    or_df['Odds Ratio'] = or_df['Odds Ratio'].apply(lambda x: f"{x:.3f}")
+    or_df['CI 2.5%'] = or_df['CI 2.5%'].apply(lambda x: f"{x:.3f}")
+    or_df['CI 97.5%'] = or_df['CI 97.5%'].apply(lambda x: f"{x:.3f}")
+    or_df['P-Value'] = or_df['P-Value'].apply(lambda x: "<0.001" if x < 0.001 else f"{x:.3f}")
+
+    print("\n--- Standard Logistic Regression: ODDS RATIOS ---")
+    print(or_df.to_string())
+    print("-" * 60)
+    
+    # Optional: You can uncomment the line below if you still want the massive statsmodels dump
+    print("\n--- Full Model Summary ---")
+    print(model.summary())
+
+    return model
+
 
 # ==========================================================
 # MAIN PIPELINE
@@ -500,6 +543,10 @@ def main():
     clinical_df = pd.read_csv(clinical_csv, low_memory=False).rename(columns={'patient_id': 'Patient', 'session_number': 'Session'})
     spike_df = pd.read_csv(spike_csv, low_memory=False)
 
+    print(f"  spike_counts:           {len(spike_df):6,} sessions")
+    print(f"  clinical_data:          {len(clinical_df):6,} records\n")
+
+    print("Calculating patient ages from de-identified dates...")
     clinical_df['start_time_deid'] = pd.to_datetime(clinical_df['start_time_deid'], errors='coerce')
     clinical_df['deid_birth_date'] = pd.to_datetime(clinical_df['deid_birth_date'], errors='coerce')
     clinical_df['age'] = (clinical_df['start_time_deid'] - clinical_df['deid_birth_date']).dt.days / 365.25
@@ -509,6 +556,7 @@ def main():
     print("=" * 75)
 
     current_patients = set(clinical_df['Patient'].dropna().unique())
+    print(f"Starting Cohort: {len(current_patients)} unique patients\n")
 
     # 1. OUTPATIENT & ROUTINE FILTER
     before_pats = current_patients.copy()
@@ -534,7 +582,7 @@ def main():
     current_patients = epilepsy_patients
     track_patients("Base Filter: LLM-Confirmed Epilepsy Diagnosis", before_pats, current_patients)
 
-    # 3. SEIZURE FREQUENCY
+    # 3. SEIZURE FREQUENCY & MATLAB IMPUTATION
     before_pats = current_patients.copy()
     allowable_visits = {
         "CONSULT VISIT", "ESTABLISHED PATIENT VISIT", "FOLLOW-UP PATIENT CLINIC", "NEW PATIENT CLINIC", 
@@ -560,6 +608,7 @@ def main():
 
     vuniq = pd.DataFrame(flat_visits)
     if not vuniq.empty:
+        # Convert VisitDate to datetime early so we can do accurate time deltas
         vuniq['VisitDate'] = pd.to_datetime(vuniq['VisitDate'], errors='coerce')
         vuniq['had_doc_freq'] = vuniq['Freq'].notna()
         
@@ -577,7 +626,7 @@ def main():
     else:
         current_patients = set()
 
-    track_patients("Base Filter: Documented Seizure Frequency", before_pats, current_patients)
+    track_patients("Base Filter: Documented Seizure Frequency (Primary Cohort)", before_pats, current_patients)
 
     # 4. CALCULATE PATIENT SPIKE RATES & AGES
     patient_spikes = valid_sessions[valid_sessions['Patient'].isin(current_patients)].groupby('Patient').agg(
@@ -588,22 +637,22 @@ def main():
     ).reset_index()
     patient_spikes["spike_rate_per_hour"] = (patient_spikes["total_spikes"] / patient_spikes["total_duration"]) * 3600
 
+    # 4.5. CALCULATE AGE AT FIRST VISIT
     bday_df = clinical_df[['Patient', 'deid_birth_date']].drop_duplicates('Patient')
     first_v_df = vuniq[vuniq['Patient'].isin(current_patients)].groupby('Patient')['VisitDate'].min().reset_index()
     first_v_df = first_v_df.merge(bday_df, on='Patient', how='inner')
     first_v_df['deid_birth_date'] = pd.to_datetime(first_v_df['deid_birth_date'], errors='coerce')
     first_v_df['age_at_first_visit'] = (first_v_df['VisitDate'] - first_v_df['deid_birth_date']).dt.days / 365.25
 
-    # 5. PROJECT SPECIFIC FILTERS & MISSINGNESS HANDLING
+    # 5. PROJECT SPECIFIC FILTERS & AGE DIAGNOSTICS
+    print("======================================================")
+    print("               PROJECT SPECIFIC FILTERS               ")
+    print("======================================================\n")
+    
     patient_df = pd.merge(patient_sz_freq, patient_spikes, on='Patient', how='inner')
     patient_df = patient_df.merge(pt_demo[['nlp_gender', 'epilepsy_type', 'epilepsy_specific']].reset_index(), on='Patient', how='inner')
     patient_df = patient_df.merge(first_v_df[['Patient', 'age_at_first_visit']], on='Patient', how='left')
     
-    before_pats = current_patients.copy()
-    patient_df = patient_df.dropna(subset=['spike_rate_per_hour'])
-    current_patients = set(patient_df['Patient'].unique())
-    track_patients("Project Filter: Removed records missing a valid spike rate", before_pats, current_patients)
-
     before_pats = current_patients.copy()
     patient_df = patient_df[patient_df['nlp_gender'].isin(['M', 'F'])]
     current_patients = set(patient_df['Patient'].unique())
@@ -627,52 +676,71 @@ def main():
     current_patients = set(patient_df['Patient'].unique())
     track_patients("Project Filter C2: Keep Valid Adult Age (>= 18 years)", before_pats, current_patients)
 
-    # --- BINARY AGE & INTERACTION TERMS ---
-    patient_df['age_ge_51'] = (patient_df['mean_age_spike'] >= 51.0).astype(int)
-    patient_df["nlp_gender_M"] = (patient_df["nlp_gender"] == "M").astype(int)
-    patient_df["canonical_subtype_Generalized"] = (patient_df["canonical_subtype"] == "Generalized").astype(int)
-    patient_df["gender_M_x_age_ge_51"] = patient_df["nlp_gender_M"] * patient_df["age_ge_51"]
+    # --------------------------------------------------------
+    # CREATE CATEGORICAL AGE GROUP (18-39 as reference)
+    # --------------------------------------------------------
+    bins = [18, 40, 65, np.inf] # [18, 40) = 18-39.99
+    labels = ['18-39', '40-64', '65+']
+    patient_df['age_group'] = pd.cut(patient_df['mean_age_spike'], bins=bins, labels=labels, right=False)
+    patient_df['age_group'] = pd.Categorical(patient_df['age_group'], categories=labels, ordered=True)
 
+    # --- BINARY CONVERSION BASED ON DYNAMIC MEDIANS ---
     med_spike = patient_df["spike_rate_per_hour"].median()
     med_sz = patient_df["mean_sz_freq"].median()
     
     patient_df["spike_rate_binary"] = (patient_df["spike_rate_per_hour"] >= med_spike).astype(int)
     patient_df["sz_freq_binary"] = (patient_df["mean_sz_freq"] >= med_sz).astype(int)
 
-    # Outputs
+    # PRINT PRETTY TABLE TO TERMINAL AND SAVE AS PNG/CSV/HTML
     print_and_save_requested_stats(patient_df, valid_sessions, vuniq, save_dir)
+    
+    # PRINT MEDIANS AND IQR FOR MALES AND FEMALES
     print_sex_stratified_descriptives(patient_df)
 
-    # LIKELIHOOD RATIO TESTS FOR INTERACTION TERMS
-    test_interaction_lrt(patient_df, "spike_rate_binary", f"SPIKE RATE (≥{med_spike:.2f}/hr)")
-    test_interaction_lrt(patient_df, "sz_freq_binary", f"SEIZURE FREQUENCY (≥{med_sz:.2f}/mo)")
+    print("=" * 75)
+    print(f"FINAL PATIENT COHORT SIZE: {len(current_patients):,} patients")
+    print(f"  -> Median Spike Rate Split:     {med_spike:.2f} / hr")
+    print(f"  -> Median Seizure Freq Split:   {med_sz:.2f} / mo")
+    print("=" * 75)
 
-    # RUN BOOTSTRAP ANALYSIS
+    print("\n======================================================")
+    print("               AGE GROUP DISTRIBUTION                 ")
+    print("======================================================")
+    print(patient_df['age_group'].value_counts().sort_index())
+    print("======================================================\n")
+
+    # 6. STANDARD LOGISTIC REGRESSION RESULTS
+    print_logit_results(patient_df, "spike_rate_binary", f"LOGISTIC REGRESSION: SPIKE RATE (≥{med_spike:.2f}/hr)")
+    print_logit_results(patient_df, "sz_freq_binary", f"LOGISTIC REGRESSION: SEIZURE FREQUENCY (≥{med_sz:.2f}/mo)")
+
+    # 7. RUN BOOTSTRAP ANALYSIS (NOW EXPONENTIATED TO ORs)
     rows_spike = run_analysis(patient_df, "spike_rate_binary", f"SPIKE RATE (≥{med_spike:.2f}/hr)")
     rows_sz    = run_analysis(patient_df, "sz_freq_binary", f"SEIZURE FREQUENCY (≥{med_sz:.2f}/mo)")
 
-    # GENERATE FOREST PLOTS
+    # 8. GENERATE FOREST PLOTS (WITH DIRECTIONAL ARROWS & OR AXES)
     print("\n--- Generating Forest Plots ---")
+    
+    # Passing the exact specified tick array: [0.0, 0.5, 1.0, 1.5, 2.0]
     forest_plot(
         rows_spike,
-        f"Bootstrapped ORs: Spike Rate (≥{med_spike:.2f}/hr) ~ Sex + Type + Age + Interaction",
+        f"Bootstrapped Odds Ratios: Spike Rate (≥{med_spike:.2f}/hr) ~ Sex + Epilepsy Type + Age Group",
         (0.0, 2.0),
         [0.0, 0.5, 1.0, 1.5, 2.0],
-        "", 
+        "", # Removed the bottom axis label
         "← Fewer Spikes",
         "More Spikes →",
-        os.path.join(save_dir, "forest_spike_rate_boot_menopause_interaction.png")
+        os.path.join(save_dir, "forest_spike_rate_boot_binary_agegroup_dynamic.png")
     )
 
     forest_plot(
         rows_sz,
-        f"Bootstrapped ORs: Seizure Freq (≥{med_sz:.2f}/mo) ~ Sex + Type + Age + Interaction",
+        f"Bootstrapped Odds Ratios: Seizure Freq (≥{med_sz:.2f}/mo) ~ Sex + Epilepsy Type + Age Group",
         (0.0, 2.0),
         [0.0, 0.5, 1.0, 1.5, 2.0],
-        "", 
+        "", # Removed the bottom axis label
         "← Fewer Seizures",
         "More Seizures →",
-        os.path.join(save_dir, "forest_seizure_freq_boot_menopause_interaction.png")
+        os.path.join(save_dir, "forest_seizure_freq_boot_binary_agegroup_dynamic.png")
     )
     print("Done plotting. All outputs saved to:", save_dir)
 

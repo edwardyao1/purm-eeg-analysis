@@ -256,7 +256,6 @@ def plot_stratified_scatter_with_stats(df, target_var, title, ylabel, save_path)
         ax.set_ylim(bottom=0)
         ax.yaxis.grid(True, linestyle='-', which='major', color='lightgray', alpha=0.7)
         
-        # Font size augmentation
         ax.set_title(f"{subtype} Epilepsy", fontsize=16, fontweight='bold', pad=10)
         ax.set_xlabel("Sex", fontsize=16, fontweight='bold')
         if ax == axes[0]: 

@@ -8,7 +8,7 @@ def create_attrition_flowchart():
     # ==========================================================
     save_dir = '/Users/edwardyao/Documents/PURM/gender_project_output/'
     os.makedirs(save_dir, exist_ok=True)
-    out_path = os.path.join(save_dir, 'two_cohort_attrition_flowchart.png')
+    out_path = os.path.join(save_dir, 'poster_flowchart.png')
 
     # ==========================================================
     # ATTRITION DATA & CALCULATIONS 
