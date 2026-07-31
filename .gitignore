@@ -6,3 +6,6 @@ __pycache__/
 data/
 gender_project_code/unused/
 gender_project_code/used/
+spike_project_code/
+spike_project_output/
+useless/
