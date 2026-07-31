@@ -20,7 +20,7 @@ def create_attrition_flowchart():
         ("Excluded: EEG not\noutpatient routine\n<= 4 hours", 1840),
         ("Excluded: no LLM-\nconfirmed diagnosis\n(n=668) or unknown\nsubtype (n=324)", 992),
         ("Excluded: no\ndocumented seizure\nfrequency", 708),
-        ("Excluded: invalid\ngender (n=1), missing\nage (n=3), < 18 (n=7)", 11)
+        ("Excluded: other\ngender (n=1), missing\nage (n=3), < 18 (n=7)", 11)
     ]
     
     main_labels = [
