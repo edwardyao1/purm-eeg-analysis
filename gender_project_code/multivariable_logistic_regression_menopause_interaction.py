@@ -407,7 +407,7 @@ def main():
         X_base = sm.add_constant(reg_df[base_vars])
         model_base = sm.Logit(y, X_base).fit(disp=0)
         print(model_base.summary())
-        
+    
         rows_base = run_analysis(reg_df, col, base_vars)
         forest_plot(rows_base, f"ORs: {title} ~ Sex + Type + Age", (0.0, 2.0), [0.0, 0.5, 1.0, 1.5, 2.0], "", f"← Fewer {suffix}", f"More {suffix} →", os.path.join(save_dir, f"forest_{col}_1_Base.png"))
 

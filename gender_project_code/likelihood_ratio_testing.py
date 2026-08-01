@@ -1,7 +1,7 @@
 # Bootstrapped binary forest plot of Logit models for spike rate and seizure frequency 
 # Modeled by sex, epilepsy type, and age groups (18-39, 40-64, 65+) 
 # with median split for binary spike rate and seizure frequency outcomes
-# INCLUDES: Comprehensive Nested Likelihood Ratio Tests (LRT) for Models M1 through M5 vs M0
+# INCLUDES: Likelihood Ratio Tests (LRT) for Models M1 through M5 vs M0
 
 import pandas as pd
 import numpy as np
@@ -19,7 +19,6 @@ np.random.seed(42)
 # TRACKING, PARSING & SUBTYPE HELPERS
 # ==========================================================
 def track_patients(step_name, before_pats, after_pats):
-    """Prints a clean readout of patient attrition."""
     dropped = len(before_pats) - len(after_pats)
     print(f"--- {step_name} ---")
     print(f"  Patients Before: {len(before_pats)}")
@@ -27,7 +26,6 @@ def track_patients(step_name, before_pats, after_pats):
     print(f"  Total Dropped:   {dropped}\n")
 
 def parse_json_array(val, is_numeric=False, is_hassz=False):
-    """Safely extracts JSON arrays from CSV cells, matching MATLAB NaN logic."""
     if pd.isna(val) or val == "": return []
     val_str = str(val).strip()
     if val_str in ("[]", "[null]", "<missing>"): return []
@@ -113,14 +111,12 @@ def bootstrap_regression_coeffs(df, outcome_col, formula_vars, n_boot=5000):
             results[var] = (1, 1, 1, 1)
             continue
 
-        # p-value is still based on whether the original log-odds cross 0
         p = 2 * min(np.mean(coeffs >= 0), np.mean(coeffs <= 0))
         
-        # Exponentiate to get Odds Ratios
         or_coeffs = np.exp(coeffs)
         
         results[var] = (
-            float(np.median(or_coeffs)), # Use median for OR distributions as they are right-skewed
+            float(np.median(or_coeffs)),
             float(np.percentile(or_coeffs, 2.5)),
             float(np.percentile(or_coeffs, 97.5)),
             float(p)
@@ -138,7 +134,6 @@ def run_analysis(patient_df, outcome_col, outcome_label):
     
     rows = []
     
-    # Reference values changed from 0 to 1 for Odds Ratios
     m_res = coeffs['nlp_gender_M']
     female_n = len(patient_df[patient_df['nlp_gender']=='F'])
     rows.append(dict(section="Sex", label="Female", n=female_n, is_reference=True, diff=1.0, lo=1.0, hi=1.0, p=None))
@@ -228,7 +223,6 @@ def forest_plot(rows, title, x_lim, x_ticks, x_label, out_path):
             ptxt = "<0.001" if row["p"] < 0.001 else f"{row['p']:.3f}"
             ax.text(COL_P, y, ptxt, va="center")
 
-    # Center reference line at OR = 1 instead of 0
     ax.plot([map_x(1.0), map_x(1.0)], [0, top], ls="--", color="gray") 
     axis_y = -0.5
     ax.plot([map_x(x_lim[0]), map_x(x_lim[1])], [axis_y, axis_y], color="black")
@@ -263,7 +257,6 @@ def print_logit_results(df, outcome_col, title):
     print(f"\nBinary Outcome Summary ({outcome_col}):")
     print(reg_df[outcome_col].value_counts())
 
-    # Create dummy indicators
     reg_df["nlp_gender_M"] = (reg_df["nlp_gender"] == "M").astype(float)
     reg_df["canonical_subtype_General"] = (reg_df["canonical_subtype"] == "General").astype(float)
     reg_df["age_group_40-64"] = (reg_df["age_group"] == "40-64").astype(float)
@@ -306,11 +299,11 @@ def build_interaction_models(df, outcome_col):
     # 1. sex:epilepsy_type
     reg_df["int_sex_type"] = reg_df["sex_M"] * reg_df["type_Gen"]
     
-    # 2. epilepsy_type:age (requires interacting with both age dummy columns)
+    # 2. epilepsy_type:age 
     reg_df["int_type_age40"] = reg_df["type_Gen"] * reg_df["age_40_64"]
     reg_df["int_type_age65"] = reg_df["type_Gen"] * reg_df["age_65_plus"]
 
-    # 3. sex:age (requires interacting with both age dummy columns)
+    # 3. sex:age
     reg_df["int_sex_age40"] = reg_df["sex_M"] * reg_df["age_40_64"]
     reg_df["int_sex_age65"] = reg_df["sex_M"] * reg_df["age_65_plus"]
 
@@ -361,7 +354,6 @@ def run_all_lrts(df, outcome_col, outcome_label):
         try:
             res_mod = sm.Logit(y, X_mod).fit(disp=0)
             
-            # Formulate strings for LRT and append Model Evaluation Metrics (including AIC/BIC)
             if model_name == "M0 (Base)":
                 lr_stat_str = "Base"
                 df_diff_str = "Base"
@@ -399,7 +391,6 @@ def run_all_lrts(df, outcome_col, outcome_label):
                 ci_hi = conf_int[1][param]
                 pval = res_mod.pvalues[param]
                 
-                # Exponentiate to get Odds Ratios and OR bounds
                 or_est = np.exp(est)
                 or_ci_low = np.exp(ci_low)
                 or_ci_hi = np.exp(ci_hi)
@@ -640,9 +631,9 @@ def main():
     run_all_lrts(patient_df, "spike_rate_binary", f"SPIKE RATE (≥{med_spike:.2f}/hr)")
     run_all_lrts(patient_df, "sz_freq_binary", f"SEIZURE FREQUENCY (≥{med_sz:.2f}/mo)")
 
-    # 8. RUN BOOTSTRAP ANALYSIS
-    rows_spike = run_analysis(patient_df, "spike_rate_binary", f"SPIKE RATE (≥{med_spike:.2f}/hr)")
-    rows_sz    = run_analysis(patient_df, "sz_freq_binary", f"SEIZURE FREQUENCY (≥{med_sz:.2f}/mo)")
+    # # 8. RUN BOOTSTRAP ANALYSIS
+    # rows_spike = run_analysis(patient_df, "spike_rate_binary", f"SPIKE RATE (≥{med_spike:.2f}/hr)")
+    # rows_sz    = run_analysis(patient_df, "sz_freq_binary", f"SEIZURE FREQUENCY (≥{med_sz:.2f}/mo)")
 
     # # 9. GENERATE FOREST PLOTS
     # print("\n--- Generating Forest Plots ---")

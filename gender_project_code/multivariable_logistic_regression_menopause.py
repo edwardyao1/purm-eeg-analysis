@@ -64,7 +64,7 @@ def assign_canonical_subtype(row):
     return np.nan
 
 # ==========================================================
-# COHORT STATS GENERATOR & PRETTY IMAGE/TABLE SAVER
+# COHORT STATS GENERATOR & IMAGE/TABLE SAVER
 # ==========================================================
 def print_and_save_requested_stats(patient_df, valid_sessions, vuniq, save_dir, n_boot=2000):
     print("\n" + "=" * 75)
