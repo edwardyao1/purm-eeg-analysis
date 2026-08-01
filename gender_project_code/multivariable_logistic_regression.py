@@ -64,7 +64,7 @@ def assign_canonical_subtype(row):
     return np.nan
 
 # ==========================================================
-# COHORT STATS GENERATOR & PRETTY IMAGE/TABLE SAVER
+# COHORT STATS GENERATOR & IMAGE/TABLE SAVER
 # ==========================================================
 def print_and_save_requested_stats(patient_df, valid_sessions, vuniq, save_dir, n_boot=2000):
     print("\n" + "=" * 75)
@@ -148,23 +148,23 @@ def print_and_save_requested_stats(patient_df, valid_sessions, vuniq, save_dir, 
     csv_path = os.path.join(save_dir, "final_cohort_table1_summary.csv")
     summary_df.to_csv(csv_path, index=False)
     
-    # 3. Save as Styled HTML
-    html_path = os.path.join(save_dir, "final_cohort_table1_summary.html")
-    html_style = """
-    <style>
-        table { border-collapse: collapse; width: 80%; font-family: Arial, sans-serif; margin: 20px 0; }
-        th, td { border: 1px solid #dddddd; text-align: left; padding: 10px; }
-        th { background-color: #f2f2f2; font-weight: bold; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-    </style>
-    """
-    with open(html_path, "w") as f:
-        f.write(f"<html><head><title>Table 1 Summary</title>{html_style}</head><body>")
-        f.write("<h2>Final Cohort Summary Statistics (Table 1)</h2>")
-        f.write(summary_df.to_html(index=False))
-        f.write("</body></html>")
+    # # 3. Save as Styled HTML
+    # html_path = os.path.join(save_dir, "final_cohort_table1_summary.html")
+    # html_style = """
+    # <style>
+    #     table { border-collapse: collapse; width: 80%; font-family: Arial, sans-serif; margin: 20px 0; }
+    #     th, td { border: 1px solid #dddddd; text-align: left; padding: 10px; }
+    #     th { background-color: #f2f2f2; font-weight: bold; }
+    #     tr:nth-child(even) { background-color: #f9f9f9; }
+    # </style>
+    # """
+    # with open(html_path, "w") as f:
+    #     f.write(f"<html><head><title>Table 1 Summary</title>{html_style}</head><body>")
+    #     f.write("<h2>Final Cohort Summary Statistics (Table 1)</h2>")
+    #     f.write(summary_df.to_html(index=False))
+    #     f.write("</body></html>")
 
-    # 4. Save as Pretty Publication PNG Image
+    # 4. Save as PNG image
     png_path = os.path.join(save_dir, "final_cohort_table1_summary.png")
     
     fig, ax = plt.subplots(figsize=(15, len(summary_df) * 0.40 + 1.2))
@@ -239,13 +239,11 @@ def print_sex_stratified_descriptives(patient_df):
         print(f"    -> Seizure Freq (sz/mo):   {sz_str}\n")
 
 # ==========================================================
-# LOGISTIC BOOTSTRAP HELPERS (WITH LOCKED RANDOM SEED)
+# LOGISTIC BOOTSTRAP HELPERS
 # ==========================================================
 def bootstrap_regression_coeffs(df, outcome_col, formula_vars, n_boot=5000):
     df = df.copy()
 
-    # CRITICAL FIX: Lock the seed explicitly right before sampling. 
-    # This guarantees identical p-values and CIs regardless of what ran earlier in the script!
     np.random.seed(42)
 
     print(f"\nChecking {outcome_col}")
@@ -350,19 +348,19 @@ def forest_plot(rows, title, x_lim, x_ticks, x_label, left_dir_label, right_dir_
         if r["section"] not in sections:
             sections.append(r["section"])
 
-    # Shifted bounds so the plot isn't squashed and P-Value stays far from the right edge
+    # Bounds for the plot and p-value
     COL_SUB = 0.02
     COL_N = 0.25   
     COL_EST = 0.41 
     PLOT_L = 0.59  
-    PLOT_R = 0.86  # Pulled the right edge of the plot in closer
-    COL_P = 0.91   # Shifted the P-Value column securely inside the plot boundary
+    PLOT_R = 0.86  
+    COL_P = 0.91  
 
     def map_x(v):
         frac = (v - x_lim[0]) / (x_lim[1] - x_lim[0])
         return PLOT_L + frac * (PLOT_R - PLOT_L)
 
-    # --- MATH FOR PERFECT UNIFORM SPACING ---
+    # Spacing metrics
     top = 10.0
     section_gap = 0.95  
     line_gap = 0.75     
@@ -465,9 +463,6 @@ def forest_plot(rows, title, x_lim, x_ticks, x_label, left_dir_label, right_dir_
 # ==========================================================
 # STANDARD LOGISTIC REGRESSION RESULTS
 # ==========================================================
-# ==========================================================
-# STANDARD LOGISTIC REGRESSION RESULTS
-# ==========================================================
 def print_logit_results(df, outcome_col, title):
     print("\n" + "=" * 80)
     print(title)
@@ -523,7 +518,6 @@ def print_logit_results(df, outcome_col, title):
     print(model.summary())
 
     return model
-
 
 # ==========================================================
 # MAIN PIPELINE
@@ -691,10 +685,10 @@ def main():
     patient_df["spike_rate_binary"] = (patient_df["spike_rate_per_hour"] >= med_spike).astype(int)
     patient_df["sz_freq_binary"] = (patient_df["mean_sz_freq"] >= med_sz).astype(int)
 
-    # PRINT PRETTY TABLE TO TERMINAL AND SAVE AS PNG/CSV/HTML
+    # Print table and save as PNG/CSV/HTML
     print_and_save_requested_stats(patient_df, valid_sessions, vuniq, save_dir)
     
-    # PRINT MEDIANS AND IQR FOR MALES AND FEMALES
+    # Print medians and IQRs for males and females
     print_sex_stratified_descriptives(patient_df)
 
     print("=" * 75)
@@ -720,13 +714,12 @@ def main():
     # 8. GENERATE FOREST PLOTS (WITH DIRECTIONAL ARROWS & OR AXES)
     print("\n--- Generating Forest Plots ---")
     
-    # Passing the exact specified tick array: [0.0, 0.5, 1.0, 1.5, 2.0]
     forest_plot(
         rows_spike,
         f"Bootstrapped Odds Ratios: Spike Rate (≥{med_spike:.2f}/hr) ~ Sex + Epilepsy Type + Age Group",
         (0.0, 2.0),
         [0.0, 0.5, 1.0, 1.5, 2.0],
-        "", # Removed the bottom axis label
+        "", # Bottom axis label is empty
         "← Fewer Spikes",
         "More Spikes →",
         os.path.join(save_dir, "forest_spike_rate_boot_binary_agegroup_dynamic.png")
@@ -737,7 +730,7 @@ def main():
         f"Bootstrapped Odds Ratios: Seizure Freq (≥{med_sz:.2f}/mo) ~ Sex + Epilepsy Type + Age Group",
         (0.0, 2.0),
         [0.0, 0.5, 1.0, 1.5, 2.0],
-        "", # Removed the bottom axis label
+        "", # Bottom axis label is empty
         "← Fewer Seizures",
         "More Seizures →",
         os.path.join(save_dir, "forest_seizure_freq_boot_binary_agegroup_dynamic.png")
